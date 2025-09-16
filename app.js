@@ -244,6 +244,7 @@ app.get(
   },
 )
 
+
 //API 9
 app.get('/user/tweets/', authenticateToken, async (request, response) => {
   const {username} = request.headers
@@ -253,31 +254,24 @@ app.get('/user/tweets/', authenticateToken, async (request, response) => {
   const userId = dbUser['user_id']
 
   const query = `
-    SELECT tweet, COUNT() AS likes, date_time As dateTime
-    FROM tweet INNER JOIN like
-    ON tweet.tweet_id = like.tweet_id
-    WHERE tweet.user_id = ${userId}
-    GROUP BY tweet.tweet_id;`
-  let likesData = await db.all(query)
+    SELECT
+      T.tweet,
+      COUNT(DISTINCT L.like_id) AS likes,
+      COUNT(DISTINCT R.reply_id) AS replies,
+      T.date_time AS dateTime
+    FROM
+      tweet AS T
+      LEFT JOIN like AS L ON T.tweet_id = L.tweet_id
+      LEFT JOIN reply AS R ON T.tweet_id = R.tweet_id
+    WHERE
+      T.user_id = ${userId}
+    GROUP BY
+      T.tweet_id
+    ORDER BY
+      T.date_time DESC;`
 
-  const repliesQuery = `
-    SELECT tweet, COUNT() AS replies
-    FROM tweet INNER JOIN reply
-    ON tweet.tweet_id = reply.tweet_id
-    WHERE tweet.user_id = ${userId}
-    GROUP BY tweet.tweet_id;`
-
-  const repliesData = await db.all(repliesQuery)
-
-  likesData.forEach(each => {
-    for (let data of repliesData) {
-      if (each.tweet === data.tweet) {
-        each.replies = data.replies
-        break
-      }
-    }
-  })
-  response.send(likesData)
+  const data = await db.all(query)
+  response.send(data)
 })
 
 //API 10
