@@ -56,26 +56,24 @@ app.post('/register/', async (request, response) => {
 
 // Authentication Middleware
 const authenticateToken = (request, response, next) => {
-  let jwtToken
-  const authHeader = request.headers['authorization']
-  if (authHeader !== undefined) {
-    jwtToken = authHeader.split(' ')[1]
+  const authHeader = request.headers['authorization'];
+  const jwtToken = authHeader?.split(' ')[1];
+
+  if (!jwtToken) {
+    return response.status(401).send('Invalid JWT Token');
   }
-  if (jwtToken === undefined) {
-    response.status(401)
-    response.send('Invalid JWT Token')
-  } else {
-    jwt.verify(jwtToken, 'SECRET_KEY', async (error, payLoad) => {
-      if (error) {
-        response.status(401)
-        response.send('Invalid JWT Token')
-      } else {
-        request.headers.username = payLoad.username
-        next()
-      }
-    })
-  }
-}
+
+  jwt.verify(jwtToken, 'SECRET_KEY', (error, payload) => {
+    if (error) {
+      return response.status(401).send('Invalid JWT Token');
+    }
+
+    // Attach username to request
+    request.headers.username = payload.username;
+    next();
+  });
+};
+
 
 // Middleware to check if user follows the tweet's author
 const isUserFollowing = async (request, response, next) => {
@@ -251,33 +249,43 @@ app.get(
 )
 
 // API 9: Get user's tweets with likes and replies count
-app.get('/user/tweets/', authenticateToken, async (request, response) => {
-  const {username} = request.headers
-  const getUserQuery = `
-    SELECT user_id FROM user WHERE username = '${username}';`
-  const dbUser = await db.get(getUserQuery)
-  const userId = dbUser['user_id']
+app.get('/user/tweets/', authenticateToken, async (req, res) => {
+  try {
+    const { username } = req.headers;
 
-  const query = `
-    SELECT
-      T.tweet,
-      COUNT(DISTINCT L.like_id) AS likes,
-      COUNT(DISTINCT R.reply_id) AS replies,
-      T.date_time AS dateTime
-    FROM
-      tweet AS T
-      LEFT JOIN like AS L ON T.tweet_id = L.tweet_id
-      LEFT JOIN reply AS R ON T.tweet_id = R.tweet_id
-    WHERE
-      T.user_id = ${userId}
-    GROUP BY
-      T.tweet_id
-    ORDER BY
-      T.date_time DESC;`
+    const getUserQuery = `SELECT user_id FROM user WHERE username = ?`;
+    const dbUser = await db.get(getUserQuery, [username]);
 
-  const data = await db.all(query)
-  response.send(data)
-})
+    if (!dbUser) return res.status(404).json({ error: 'User not found' });
+
+    const userId = dbUser.user_id;
+
+    const query = `
+      SELECT
+        T.tweet,
+        COUNT(DISTINCT L.like_id) AS likes,
+        COUNT(DISTINCT R.reply_id) AS replies,
+        T.date_time AS dateTime
+      FROM
+        tweet AS T
+        LEFT JOIN like AS L ON T.tweet_id = L.tweet_id
+        LEFT JOIN reply AS R ON T.tweet_id = R.tweet_id
+      WHERE
+        T.user_id = ?
+      GROUP BY
+        T.tweet_id
+      ORDER BY
+        T.date_time DESC;
+    `;
+
+    const data = await db.all(query, [userId]);
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 // API 10: Post a new tweet
 app.post('/user/tweets/', authenticateToken, async (request, response) => {
