@@ -68,11 +68,11 @@ const authenticateToken = (request, response, next) => {
       return response.status(401).send('Invalid JWT Token');
     }
 
-    // Attach username to request
     request.headers.username = payload.username;
     next();
   });
 };
+
 
 
 // Middleware to check if user follows the tweet's author
